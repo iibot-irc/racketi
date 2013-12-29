@@ -30,7 +30,8 @@
 (define (main)
   (define (make-empty-sandbox shared)
     (parameterize
-      ([sandbox-error-output #f]
+      ([sandbox-output 'pipe]
+       [sandbox-error-output #f]
        [sandbox-propagate-breaks #f]
        [sandbox-memory-limit 128]
        [sandbox-eval-limits '(5 128)])
@@ -107,8 +108,14 @@
                     (not ((cdr sandbox) '(if (parameter? share-sandbox) (share-sandbox) #f))))
               (raise (exn:fail:contract "You don't have permission to use this sandbox."
                                         (current-continuation-marks))))
-            (write ((cdr sandbox) `(identity ,expr)) out)
+            (define courier
+              (thread
+                (thunk
+                  (copy-port (get-output (cdr sandbox)) out))))
+            (write ((cdr sandbox) expr) out)
             (newline out)
+            (unless (sync/timeout 0.5 courier)
+              (kill-thread courier))
             (close-output-port out)
             (with-handlers
               ([exn:fail?
@@ -138,7 +145,7 @@
               (match (port->string in)
                 [(pregexp #px"^[ \t\r\n\v\f]*([^ \t\r\n\v\f]+)[ \t\r\n\v\f]*(eval in[ \t\r\n\v\f]*[^ \t\r\n\v\f]+)?[ \t\r\n\v\f]*(.*)$"
                           (list _ nick (or (pregexp #px"^eval in[ \t\r\n\v\f]*([^ \t\r\n\v\f]+)$" (list _ ns)) ns) expr))
-                 (values nick ns (with-input-from-string expr read))]
+                 (values nick ns expr)]
                 [else (raise (exn:fail:contract "Invalid input." (current-continuation-marks)))]))))
         (close-input-port in)
         (define target (if ns ns nick))
