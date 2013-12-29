@@ -1,4 +1,4 @@
-#!/usr/bin/env /scratch/m4burns/racket/bin/racket
+#!/usr/bin/env racket
 #lang racket
 (require racket/sandbox
          racket/serialize
@@ -108,15 +108,36 @@
                     (not ((cdr sandbox) '(if (parameter? share-sandbox) (share-sandbox) #f))))
               (raise (exn:fail:contract "You don't have permission to use this sandbox."
                                         (current-continuation-marks))))
-            (define courier
+            (define sandbox-pipe
+              ((cdr sandbox) '(let-values (((in out) (make-pipe))) (current-output-port out) in)))
+            (define-values (result-in result-out) (make-pipe))
+            (define sandbox-output-courier
               (thread
                 (thunk
-                  (copy-port (get-output (cdr sandbox)) out))))
-            (write ((cdr sandbox) expr) out)
-            (newline out)
-            (unless (sync/timeout 0.5 courier)
-              (kill-thread courier))
-            (close-output-port out)
+                  (copy-port sandbox-pipe result-out))))
+            (define output-courier
+              (thread
+                (thunk
+                  (let loop ()
+                    (with-handlers ([exn? (lambda(e) (void))])
+                      (define bstr (read-bytes 128 result-in))
+                      (unless (eof-object? bstr)
+                        (write-bytes bstr out)
+                        (flush-output out)
+                        ;(sleep (/ (bytes-length bstr) 128))   %%% rate limiting disabled
+                        (loop)))))))
+            (let ((result ((cdr sandbox) expr)))
+              (unless (void? result)
+                (write result result-out)
+                (newline result-out)))
+            ((cdr sandbox) '(close-output-port (current-output-port)))
+            (unless (sync/timeout 2.5 sandbox-output-courier)
+              (kill-thread sandbox-output-courier))
+            (close-output-port result-out)
+            (unless (sync/timeout 20 output-courier)
+              (kill-thread output-courier))
+            (close-input-port sandbox-pipe)
+            (map close-output-port `(,result-out ,out))
             (with-handlers
               ([exn:fail?
                   (lambda(e) (fprintf (current-error-port) "~a~n" (exn-message e)))])
