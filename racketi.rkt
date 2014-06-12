@@ -6,6 +6,7 @@
          racket/async-channel
          net/base64)
 
+(define port 5556)
 (define namespace-store (build-path (getenv "HOME") "state/racketi/namespaces"))
 (make-directory* namespace-store)
 
@@ -200,7 +201,7 @@
                  serialization-channel)))
             (hash-set world target new-sandbox)]))))
 
-  (define listener (tcp-listen 5555 4 #t "127.0.0.1"))
+  (define listener (tcp-listen port 4 #t "127.0.0.1"))
   (define serialization-chan (make-namespace-serialization-channel))
   (with-handlers
     ([exn:break? (lambda(e) (fprintf (current-error-port) "~nTerminating on break.~n"))])
@@ -213,4 +214,5 @@
           (loop world)])))
   (tcp-close listener))
 
+(fprintf (current-error-port) "Started\n")
 (main)
