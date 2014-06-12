@@ -6,7 +6,8 @@
          racket/async-channel
          net/base64)
 
-(define namespace-store "/users/cscbot/state/racketi/namespaces")
+(define namespace-store (build-path (getenv "HOME") "state/racketi/namespaces"))
+(make-directory* namespace-store)
 
 (define (serialize-namespace ns port)
   (write
@@ -71,7 +72,7 @@
                   world))
             world))
       (make-immutable-hash)
-      (directory-list namespace-store #:build? #t)))
+      (directory-list namespace-store)))
   (define (make-namespace-serialization-channel)
     (define channel (make-async-channel))
     (thread
